@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Processador de Cartões</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root {
+    --vermelho: #c60000; --vermelho-esc: #a30000;
+    --fundo: #efefef; --texto: #4a4a4a; --borda: #ddd;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--fundo); font-family: 'Segoe UI', Arial, sans-serif;
+    min-height: 100vh; display: flex; align-items: flex-start;
+    justify-content: center; padding: 24px;
+  }
+  .card {
+    background: #fff; max-width: 720px; width: 100%; border-radius: 14px;
+    box-shadow: 0 4px 24px rgba(0,0,0,.09); padding: 34px 38px; text-align: center;
+  }
+  h1 { color: var(--vermelho); font-size: 30px; font-weight: 800; margin-bottom: 8px; }
+  .subtitulo { color: var(--texto); font-size: 14px; line-height: 1.6; margin-bottom: 20px; }
+
+  .campo { text-align: left; margin-bottom: 16px; }
+  .campo label { display: block; font-size: 13px; font-weight: 700; color: #333; margin-bottom: 5px; }
+  .campo select, .campo input {
+    width: 100%; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid #ccc; font-size: 14px; background: #fff; font-family: inherit;
+  }
+  .dica { font-size: 12px; color: #888; margin-top: 5px; line-height: 1.5; }
+
+  .dropzone {
+    border: 2px dashed var(--vermelho); background: #fdf1f1; border-radius: 10px;
+    padding: 34px 24px; cursor: pointer; transition: background .15s;
+  }
+  .dropzone.arrastando { background: #fbe0e0; }
+  .dropzone.bloqueado { opacity: .6; cursor: default; }
+  .dropzone .icone { font-size: 42px; margin-bottom: 8px; }
+  .dropzone .titulo { font-weight: 700; font-size: 16px; color: #222; margin-bottom: 8px; }
+  .dropzone .regras { color: #888; font-size: 12.5px; line-height: 1.9; }
+  #inputArquivos { display: none; }
+
+  .spinner {
+    display: none; width: 28px; height: 28px; border: 4px solid #f0c0c0;
+    border-top-color: var(--vermelho); border-radius: 50%;
+    animation: spin .7s linear infinite; margin: 14px auto 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  ul#listaArquivos { list-style: none; margin: 16px 0 0; max-height: 190px; overflow-y: auto; text-align: left; }
+  ul#listaArquivos li {
+    background: #f5f5f5; border-radius: 6px; padding: 9px 13px; margin-bottom: 6px;
+    font-size: 13.5px; display: flex; align-items: center; gap: 8px;
+  }
+  .nome-arq { flex: 1; word-break: break-all; }
+  .tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
+  .tag.detectando { background: #e8f0fe; color: #1a56db; }
+  .tag.ok { background: #d4edda; color: #1e6b2b; }
+  .tag.erro { background: #fce8e8; color: #a30000; }
+  .tag.aviso { background: #fff3cd; color: #856404; }
+
+  #resultado { margin-top: 16px; text-align: left; font-size: 13.5px; }
+  .linha-resultado { padding: 11px 14px; border-radius: 7px; margin-bottom: 8px; line-height: 1.6; }
+  .linha-resultado.ok { background: #e8f6ea; color: #1e6b2b; }
+  .linha-resultado.aviso { background: #fff6da; color: #8a6d00; }
+  .linha-resultado.erro { background: #fce8e8; color: #a30000; }
+  .link-dl { font-weight: 700; color: inherit; text-decoration: underline; }
+  .aviso-extra { display: block; margin-top: 5px; font-size: 12.5px; opacity: .9; }
+  .btn-cadastrar {
+    margin-top: 9px; background: var(--vermelho); color: #fff; border: none;
+    border-radius: 7px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer;
+  }
+
+  table.previa { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+  table.previa td { padding: 3px 6px; border-bottom: 1px solid rgba(0,0,0,.06); }
+  table.previa td.v { text-align: right; white-space: nowrap; }
+
+  .botoes { display: flex; gap: 10px; justify-content: center; margin-top: 20px; flex-wrap: wrap; }
+  button { border: none; border-radius: 8px; padding: 12px 22px; font-size: 14.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  #btnProcessar { background: var(--vermelho); color: #fff; }
+  #btnLimpar { background: #6b6b6b; color: #fff; }
+  #btnBaixarTudo { display: none; background: #1e7a34; color: #fff; }
+  #btnConfig, #btnDiagnostico { background: #e9e9e9; color: #444; font-size: 13px; padding: 10px 16px; }
+  #saidaDiag {
+    display: none; margin-top: 14px; text-align: left; background: #1e1e1e; color: #d8d8d8;
+    font-family: Consolas, monospace; font-size: 11.5px; padding: 12px; border-radius: 8px;
+    max-height: 300px; overflow: auto; white-space: pre-wrap;
+  }
+
+  /* ── painel de configurações ── */
+  #overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45);
+    z-index: 50; padding: 24px; overflow-y: auto;
+  }
+  #overlay.aberto { display: block; }
+  .painel {
+    background: #fff; max-width: 760px; margin: 0 auto; border-radius: 14px;
+    padding: 26px 30px; text-align: left;
+  }
+  .painel h2 { font-size: 21px; color: #222; margin-bottom: 4px; }
+  .painel .sub { font-size: 13px; color: #777; margin-bottom: 16px; line-height: 1.6; }
+  table.empresas { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 18px; }
+  table.empresas th {
+    text-align: left; font-size: 11.5px; text-transform: uppercase; color: #999;
+    padding: 6px 8px; border-bottom: 2px solid var(--borda);
+  }
+  table.empresas td { padding: 9px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+  table.empresas .acoes { text-align: right; white-space: nowrap; }
+  .mini {
+    border: 1px solid var(--borda); background: #fff; border-radius: 6px;
+    padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer; margin-left: 5px;
+  }
+  .vazio { padding: 20px; text-align: center; color: #999; font-size: 13.5px; background: #fafafa; border-radius: 8px; margin-bottom: 16px; }
+
+  .grade { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .grade .largo { grid-column: 1 / -1; }
+  fieldset { border: 1px solid var(--borda); border-radius: 10px; padding: 16px 18px 4px; }
+  legend { font-size: 13.5px; font-weight: 800; color: #333; padding: 0 6px; }
+
+  #msgConfig { display: none; border-radius: 8px; padding: 11px 14px; font-size: 13.5px; margin-bottom: 14px; }
+  #msgConfig.ok { display: block; background: #e8f6ea; color: #1e6b2b; }
+  #msgConfig.erro { display: block; background: #fce8e8; color: #a30000; }
+  .rodape-painel { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Processador de Cartões</h1>
+  <p class="subtitulo">
+    Arraste as faturas em PDF exatamente como recebeu do cliente.<br>
+    O robô identifica o banco pelo conteúdo do PDF e gera o TXT do Questor.
+  </p>
+
+  <div class="campo">
+    <label for="selectEmpresa">Empresa / cartão</label>
+    <select id="selectEmpresa">
+      <option value="auto">Detectar automaticamente</option>
+      {% for e in empresas %}
+      <option value="{{ e.valor }}">{{ e.label }}</option>
+      {% endfor %}
+    </select>
+    <div class="dica">
+      No automático o robô só acerta sozinho quando há uma única empresa naquele
+      banco, ou quando o CNPJ dela está cadastrado. Na dúvida, escolha aqui —
+      vale para todos os PDFs deste envio.
+    </div>
+  </div>
+
+  <div class="dropzone" id="dropzone">
+    <div class="icone">📁</div>
+    <div class="titulo">Clique aqui ou arraste os arquivos PDF</div>
+    <div class="regras">
+      1 — Banco identificado pelo conteúdo do PDF<br>
+      2 — Pode soltar várias faturas de uma vez<br>
+      3 — Sai um TXT por fatura + um ZIP com todos
+    </div>
+    <div class="spinner" id="spinner"></div>
+    <input type="file" id="inputArquivos" accept="application/pdf" multiple>
+  </div>
+
+  <ul id="listaArquivos"></ul>
+  <div id="resultado"></div>
+  <pre id="saidaDiag"></pre>
+
+  <div class="botoes">
+    <button id="btnProcessar">Processar Arquivos</button>
+    <button id="btnBaixarTudo">⬇ Baixar todos os TXT</button>
+    <button id="btnLimpar">Limpar</button>
+  </div>
+  <div class="botoes" style="margin-top:10px">
+    <button id="btnConfig">⚙ Empresas cadastradas</button>
+    <button id="btnDiagnostico">🔍 Ver o que o robô leu</button>
+  </div>
+</div>
+
+<!-- ══════════════ PAINEL DE CONFIGURAÇÕES ══════════════ -->
+<div id="overlay">
+  <div class="painel">
+    <h2>Empresas cadastradas</h2>
+    <p class="sub">
+      O que você cadastrar aqui vale na hora — não precisa reiniciar o robô nem
+      abrir arquivo de programa. Para corrigir uma empresa, use o "Editar".
+    </p>
+
+    <div id="msgConfig"></div>
+
+    <div id="secao-empresas">
+      <table class="empresas" id="tabelaEmpresas">
+        <thead>
+          <tr><th>Código</th><th>Empresa</th><th>Banco</th><th>Débito</th><th>Crédito</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="vazio" id="semEmpresas" style="display:none">
+        Nenhuma empresa cadastrada ainda. Preencha o formulário abaixo.
+      </div>
+
+      <fieldset>
+        <legend id="tituloForm">➕ Nova empresa</legend>
+        <div class="grade">
+          <div class="campo">
+            <label>Código da empresa no Questor <em style="font-weight:400;color:#999">(opcional)</em></label>
+            <input id="fCodigo" type="text" inputmode="numeric" placeholder="deixe em branco se não usar">
+            <div class="dica">Só números. Não vai para dentro do TXT — serve
+              só pra você reconhecer a empresa na listinha.</div>
+          </div>
+          <div class="campo">
+            <label>Banco do cartão</label>
+            <select id="fBanco">
+              {% for b in bancos %}<option value="{{ b.valor }}">{{ b.label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="campo largo">
+            <label>Nome da empresa</label>
+            <input id="fNome" type="text" placeholder="Rodrigues S Hospitalar">
+            <div class="dica">É só pra você reconhecer na listinha.</div>
+          </div>
+          <div class="campo">
+            <label>Conta de DÉBITO</label>
+            <input id="fDebito" type="text" placeholder="4978">
+            <div class="dica">Conta da despesa.</div>
+          </div>
+          <div class="campo">
+            <label>Conta de CRÉDITO</label>
+            <input id="fCredito" type="text" placeholder="800">
+            <div class="dica">Contrapartida (o cartão).</div>
+          </div>
+          <div class="campo">
+            <label>Código de histórico</label>
+            <input id="fHistorico" type="text" placeholder="1" value="1">
+            <div class="dica">O que vai no 4º campo do TXT.</div>
+          </div>
+          <div class="campo">
+            <label>Página em que começam as compras</label>
+            <input id="fPagina" type="text" inputmode="numeric" placeholder="0" value="0">
+            <div class="dica"><strong>0 = ler o PDF inteiro</strong> (é o recomendado).
+              Banco do Brasil costuma ser 3.</div>
+          </div>
+          <div class="campo largo">
+            <label>CNPJ da empresa (opcional, mas ajuda muito)</label>
+            <input id="fCnpj" type="text" placeholder="12.345.678/0001-99">
+            <div class="dica">
+              Com o CNPJ preenchido, o robô reconhece a empresa sozinha ao ler o
+              PDF — você não precisa escolher nada na listinha.
+            </div>
+          </div>
+        </div>
+        <div class="rodape-painel">
+          <button class="mini" id="btnCancelarEdicao" style="display:none">Cancelar edição</button>
+          <button id="btnSalvarEmpresa" style="background:var(--vermelho);color:#fff">Salvar empresa</button>
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="rodape-painel" style="border-top:1px solid var(--borda);padding-top:14px">
+      <button class="mini" id="btnFecharConfig">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════ tela principal ═══════════
+const dropzone=document.getElementById('dropzone'), inputEl=document.getElementById('inputArquivos'),
+      listaEl=document.getElementById('listaArquivos'), resultadoEl=document.getElementById('resultado'),
+      btnLimpar=document.getElementById('btnLimpar'), btnBaixar=document.getElementById('btnBaixarTudo'),
+      btnProc=document.getElementById('btnProcessar'), btnDiag=document.getElementById('btnDiagnostico'),
+      saidaDiag=document.getElementById('saidaDiag'), spinner=document.getElementById('spinner'),
+      selectEmp=document.getElementById('selectEmpresa');
+
+let arquivos=[], processando=false, loteAtual=null;
+
+function esc(t){return String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function setSpinner(on){spinner.style.display=on?'block':'none';dropzone.classList.toggle('bloqueado',on);btnProc.disabled=on;processando=on;}
+
+function renderLista(){
+  listaEl.innerHTML='';
+  arquivos.forEach(f=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span>📄</span><span class="nome-arq">${esc(f.name)}</span><span class="tag detectando">Na fila</span>`;
+    listaEl.appendChild(li);
+  });
+}
+function setTagPorNome(nome,txt,cls){
+  [...listaEl.children].forEach(li=>{
+    if(li.querySelector('.nome-arq').textContent===nome){
+      const t=li.querySelector('.tag'); t.textContent=txt; t.className='tag '+cls;
+    }
+  });
+}
+
+function addResultado(r){
+  const div=document.createElement('div');
+  div.className='linha-resultado '+r.status;
+  let h=`<strong>${esc(r.arquivo)}</strong><br>${esc(r.mensagem)}`;
+  if(r.titular) h+=`<span class="aviso-extra">🧾 Fatura em nome de: ${esc(r.titular)}</span>`;
+  (r.avisos||[]).forEach(a=>{h+=`<span class="aviso-extra">⚠️ ${esc(a)}</span>`;});
+
+  if(r.previa&&r.previa.length){
+    h+='<table class="previa">';
+    r.previa.forEach(l=>{
+      const p=l.parcelas?` <em>(${l.parcelas}x — valor cheio)</em>`:'';
+      h+=`<tr><td>${esc(l.data)}</td><td>${esc(l.descricao)}${p}</td><td class="v">${esc(l.valor)}</td></tr>`;
+    });
+    h+='</table>';
+  }
+  if(r.status==='ok'&&r.txt)
+    h+=`<br><a class="link-dl" href="/download/${encodeURIComponent(r.lote)}/${encodeURIComponent(r.txt)}">⬇ Baixar ${esc(r.txt)}</a>`;
+  div.innerHTML=h;
+
+  // erro por falta de cadastro -> oferece cadastrar na hora, já preenchido
+  if(r.status==='erro'&&r.sugestao&&r.sugestao.oferecer_cadastro){
+    const b=document.createElement('button');
+    b.className='btn-cadastrar';
+    b.textContent='➕ Cadastrar essa empresa agora';
+    b.onclick=()=>abrirConfig(r.sugestao);
+    div.appendChild(b);
+  }
+  resultadoEl.appendChild(div);
+}
+
+function adicionarArquivos(novos){
+  const pdfs=[...novos].filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+  const ignorados=novos.length-pdfs.length;
+  pdfs.forEach(f=>{if(!arquivos.some(a=>a.name===f.name&&a.size===f.size))arquivos.push(f);});
+  renderLista();
+  if(ignorados>0) resultadoEl.innerHTML=`<div class="linha-resultado aviso">${ignorados} arquivo(s) ignorado(s): só aceito PDF.</div>`;
+}
+
+async function processar(){
+  if(processando) return;
+  if(arquivos.length===0){
+    resultadoEl.innerHTML='<div class="linha-resultado aviso">Arraste pelo menos um PDF antes de processar.</div>';
+    return;
+  }
+  resultadoEl.innerHTML=''; saidaDiag.style.display='none'; btnBaixar.style.display='none';
+  arquivos.forEach(f=>setTagPorNome(f.name,'Processando…','detectando'));
+
+  const fd=new FormData();
+  arquivos.forEach(f=>fd.append('arquivos',f));
+  fd.append('empresa',selectEmp.value);
+
+  setSpinner(true);
+  try{
+    const dados=await (await fetch('/processar',{method:'POST',body:fd})).json();
+    if(dados.erro){resultadoEl.innerHTML=`<div class="linha-resultado erro">${esc(dados.erro)}</div>`;return;}
+    dados.resultados.forEach(r=>{
+      setTagPorNome(r.arquivo, r.status==='ok'?'✔ Gerado':r.status==='aviso'?'⚠ Aviso':'✖ Erro', r.status);
+      addResultado(r);
+    });
+    if(dados.zip_disponivel){
+      loteAtual=dados.lote;
+      btnBaixar.textContent=`⬇ Baixar todos os TXT (${dados.qtd_txt})`;
+      btnBaixar.style.display='inline-block';
+    }
+  }catch(e){
+    resultadoEl.innerHTML=`<div class="linha-resultado erro">Erro de comunicação com o robô: ${esc(e)}</div>`;
+  }finally{setSpinner(false);}
+}
+
+async function diagnosticar(){
+  if(arquivos.length===0){
+    resultadoEl.innerHTML='<div class="linha-resultado aviso">Arraste um PDF primeiro — mostro o texto que o robô consegue ler dele.</div>';
+    return;
+  }
+  const fd=new FormData(); fd.append('arquivo',arquivos[0]);
+  setSpinner(true);
+  try{
+    const d=await (await fetch('/diagnostico',{method:'POST',body:fd})).json();
+    if(d.erro) saidaDiag.textContent='Erro: '+d.erro;
+    else{
+      let txt=`Arquivo: ${d.arquivo}\nPáginas: ${d.paginas}\nBanco detectado: ${d.banco_detectado}\n`;
+      d.conteudo.forEach(p=>{txt+=`\n───── PÁGINA ${p.pagina} ─────\n`+p.linhas.join('\n');});
+      saidaDiag.textContent=txt;
+    }
+    saidaDiag.style.display='block';
+  }catch(e){saidaDiag.textContent='Erro: '+e;saidaDiag.style.display='block';}
+  finally{setSpinner(false);}
+}
+
+function limparTudo(){
+  arquivos=[];loteAtual=null;listaEl.innerHTML='';resultadoEl.innerHTML='';
+  saidaDiag.style.display='none';saidaDiag.textContent='';
+  btnBaixar.style.display='none';inputEl.value='';setSpinner(false);
+}
+
+dropzone.addEventListener('click',()=>{if(!processando)inputEl.click();});
+inputEl.addEventListener('change',e=>adicionarArquivos(e.target.files));
+['dragenter','dragover'].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();if(!processando)dropzone.classList.add('arrastando');}));
+['dragleave','drop'].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropzone.classList.remove('arrastando');}));
+dropzone.addEventListener('drop',e=>{if(!processando)adicionarArquivos(e.dataTransfer.files);});
+btnProc.addEventListener('click',processar);
+btnLimpar.addEventListener('click',limparTudo);
+btnDiag.addEventListener('click',diagnosticar);
+btnBaixar.addEventListener('click',()=>{if(loteAtual)location.href='/download-lote/'+encodeURIComponent(loteAtual);});
+
+// ═══════════ painel de configurações ═══════════
+const overlay=document.getElementById('overlay'), msgConfig=document.getElementById('msgConfig'),
+      corpoTabela=document.querySelector('#tabelaEmpresas tbody'), semEmpresas=document.getElementById('semEmpresas'),
+      tabela=document.getElementById('tabelaEmpresas'), tituloForm=document.getElementById('tituloForm'),
+      btnCancelar=document.getElementById('btnCancelarEdicao');
+
+let idEditando='';
+
+function msg(texto,tipo){
+  msgConfig.textContent=texto; msgConfig.className=tipo;
+  if(tipo==='ok') setTimeout(()=>{msgConfig.className='';},4000);
+}
+
+function limparForm(){
+  idEditando='';
+  ['fCodigo','fNome','fDebito','fCredito','fCnpj'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('fHistorico').value='1';
+  document.getElementById('fPagina').value='0';
+  tituloForm.textContent='➕ Nova empresa';
+  btnCancelar.style.display='none';
+}
+
+async function carregarConfig(){
+  const d=await (await fetch('/api/config')).json();
+  corpoTabela.innerHTML='';
+  d.empresas.forEach(e=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td><strong>${e.codigo?esc(e.codigo):'<span style="color:#bbb">—</span>'}</strong></td><td>${esc(e.nome)}</td>
+      <td>${esc(e.banco_label)}</td><td>${esc(e.debito)}</td><td>${esc(e.credito)}</td>
+      <td class="acoes"></td>`;
+    const acoes=tr.querySelector('.acoes');
+    const bE=document.createElement('button'); bE.className='mini'; bE.textContent='Editar';
+    bE.onclick=()=>preencherForm(e);
+    acoes.append(bE);
+    corpoTabela.appendChild(tr);
+  });
+  const vazio=d.empresas.length===0;
+  tabela.style.display=vazio?'none':'table';
+  semEmpresas.style.display=vazio?'block':'none';
+}
+
+function preencherForm(e){
+  idEditando=e.id;
+  document.getElementById('fCodigo').value=e.codigo;
+  document.getElementById('fNome').value=e.nome;
+  document.getElementById('fBanco').value=e.banco;
+  document.getElementById('fDebito').value=e.debito;
+  document.getElementById('fCredito').value=e.credito;
+  document.getElementById('fHistorico').value=e.historico;
+  document.getElementById('fPagina').value=e.pagina_pdf;
+  document.getElementById('fCnpj').value=e.cnpj||'';
+  tituloForm.textContent='✏️ Editando: '+(e.codigo?e.codigo+' - ':'')+e.nome;
+  btnCancelar.style.display='inline-block';
+  overlay.scrollTop=overlay.scrollHeight;
+}
+
+document.getElementById('btnSalvarEmpresa').addEventListener('click',async()=>{
+  const empresa={
+    codigo:document.getElementById('fCodigo').value,
+    nome:document.getElementById('fNome').value,
+    banco:document.getElementById('fBanco').value,
+    debito:document.getElementById('fDebito').value,
+    credito:document.getElementById('fCredito').value,
+    historico:document.getElementById('fHistorico').value,
+    pagina_pdf:document.getElementById('fPagina').value,
+    cnpj:document.getElementById('fCnpj').value,
+  };
+  const r=await (await fetch('/api/empresa',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({empresa,id_original:idEditando})})).json();
+  if(r.erro){msg(r.erro,'erro');return;}
+  msg(r.mensagem+' A listinha da tela principal é atualizada ao fechar.','ok');
+  limparForm(); await carregarConfig();
+});
+
+btnCancelar.addEventListener('click',limparForm);
+
+async function abrirConfig(sugestao){
+  overlay.classList.add('aberto');
+  msgConfig.className='';
+  limparForm();
+  await carregarConfig();
+  if(sugestao){
+    if(sugestao.banco) document.getElementById('fBanco').value=sugestao.banco;
+    if(sugestao.titular) document.getElementById('fNome').value=sugestao.titular;
+    if(sugestao.cnpj) document.getElementById('fCnpj').value=sugestao.cnpj;
+    msg('Preenchi o que consegui ler do PDF. Faltam as contas de débito e crédito.','ok');
+  }
+}
+
+document.getElementById('btnConfig').addEventListener('click',()=>abrirConfig(null));
+document.getElementById('btnFecharConfig').addEventListener('click',()=>{
+  overlay.classList.remove('aberto');
+  location.reload();   // recarrega a listinha de empresas da tela principal
+});
+overlay.addEventListener('click',e=>{if(e.target===overlay)document.getElementById('btnFecharConfig').click();});
+</script>
+</body>
+</html>
